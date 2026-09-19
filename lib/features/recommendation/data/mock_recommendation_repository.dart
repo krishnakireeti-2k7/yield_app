@@ -1,97 +1,73 @@
-import '../domain/recommendation_snapshot.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../harvest_case/domain/harvest_case.dart';
-import '../../../shared/models/crop.dart';
+import '../domain/recommendation_snapshot.dart';
 
-/// Fixed presentation fixtures, never calculated from farmer inputs.
 class MockRecommendationRepository implements RecommendationRepository {
+  MockRecommendationRepository(this.prefs);
+  final SharedPreferences? prefs;
+
   @override
   Future<RecommendationSnapshot> evaluate(HarvestCase harvestCase) async {
-    await Future<void>.delayed(const Duration(milliseconds: 1100));
-    return _snapshot(harvestCase, false);
-  }
+    // Simulate network delay
+    await Future.delayed(const Duration(seconds: 2));
 
-  @override
-  Future<RecommendationSnapshot> simulateChange(HarvestCase harvestCase) async {
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    return _snapshot(harvestCase, true);
-  }
+    final cacheKey = 'mock_rec_${harvestCase.id}';
 
-  RecommendationSnapshot _snapshot(
-    HarvestCase c,
-    bool changed,
-  ) => RecommendationSnapshot(
-    caseId: c.id,
-    action: 'Sell today',
-    destination: changed
-        ? const Destination(
-            id: 'riverside',
-            name: 'Riverside market',
-            distanceKm: 16,
-            travelTime: '35 min',
-            closesAt: '4:30 PM',
-          )
-        : const Destination(
-            id: 'growers',
-            name: 'Growers market',
-            distanceKm: 29,
-            travelTime: '55 min',
-            closesAt: '4:00 PM',
-          ),
-    expectedNetValue: changed ? '₹12,850' : '₹13,450',
-    range: changed ? '₹12,100 – ₹13,400' : '₹12,700 – ₹14,100',
-    baselineValue: '₹11,700',
-    valueDifference: changed ? '+₹1,150' : '+₹1,750',
-    reasons: [
-      (
-        title: changed
-            ? 'A shorter trip in the heat'
-            : 'A better estimated return',
-        detail: changed
-            ? 'The closer destination reduces time on the road for this example batch.'
-            : 'The example market offer leaves more value after travel and handling.',
-      ),
-      (
-        title: 'Transport is accounted for',
-        detail:
-            'Estimated net value includes demo transport and handling costs.',
-      ),
-      (
-        title: 'Your timing comes first',
-        detail: 'Same-day sale keeps this example within its selling window.',
-      ),
-    ],
-    assumptions: const [
-      'Illustrative fixture for a 650 kg tomato batch; edits do not recalculate these figures.',
-      'Market acceptance, buyer availability and prices must be checked before travelling.',
-      'No confirmed buyer or transport booking. All amounts are estimates.',
-      'This demo uses no live market, weather or routing services.',
-    ],
-    dataFreshness: 'Synthetic local snapshot • 18 Sep 2026, 9:15 AM',
-    alternatives: const [
-      RecommendationAlternative(
-        action: 'Wait & sell tomorrow',
-        destination: 'Village mandi',
-        value: '₹10,950',
-        status: 'Not advised',
-        reason:
-            'Waiting exposes ripe produce to overnight quality loss and conflicts with a same-day selling constraint.',
-      ),
-      RecommendationAlternative(
-        action: 'Cold storage · 2 days',
-        destination: 'District cold hub',
-        value: 'Not feasible',
-        status: 'Unavailable',
-        reason:
-            'No confirmed space for this example batch. Storage fees may outweigh a better selling price.',
-      ),
-    ],
-    temperature: changed ? '33°C' : '28°C',
-    humidity: changed ? '61%' : '56%',
-    remainingWindow: changed ? '~4.5 hrs' : '~7 hrs',
-    marketRates: const [
-      (name: 'Growers market · 29 km', price: '₹24.0 /kg'),
-      (name: 'Riverside market · 16 km', price: '₹22.5 /kg'),
-      (name: 'Village mandi · 8 km', price: '₹20.0 /kg'),
-    ],
-  );
+    // For realism, we generate a slightly varied mock based on the case quantity
+    final basePrice = 25.0; // ₹25/kg
+    final qty = harvestCase.quantityKg;
+    final totalValue = basePrice * qty;
+
+    final mockData = {
+      'destination': {
+        'id': 'mock-best',
+        'name': 'WayCool Foods (Direct)',
+        'action': 'direct_buyer',
+        'net_value': totalValue,
+        'low': totalValue * 0.9,
+        'high': totalValue * 1.1,
+        'distance_km': 15.5,
+        'travel_hours': 0.5,
+      },
+      'alternatives': [
+        {
+          'id': 'mock-alt-1',
+          'name': 'Bowenpally',
+          'action': 'sell_today',
+          'net_value': totalValue * 0.85,
+          'low': totalValue * 0.75,
+          'high': totalValue * 0.95,
+          'distance_km': 22.0,
+          'travel_hours': 1.2,
+        },
+        {
+          'id': 'mock-alt-2',
+          'name': 'Local Mandi (Store 1 day)',
+          'action': 'sell_today',
+          'net_value': totalValue * 0.80,
+          'low': totalValue * 0.70,
+          'high': totalValue * 0.90,
+          'distance_km': 5.0,
+          'travel_hours': 0.2,
+        },
+      ],
+      'observed_at': DateTime.now().toIso8601String(),
+      'assumption_codes': [
+        'estimate_caution',
+        'reference_decay',
+        'sensitivity_range',
+      ],
+      'sources': ['WayCool Daily Procurement Rate', 'Open-Meteo Weather Data'],
+      'baseline_value': totalValue * 0.82,
+      'value_difference': totalValue * 0.18,
+      'temperature_c': 28.5,
+      'humidity_percent': 65.0,
+    };
+
+    // Store the mock data
+    await prefs?.setString(cacheKey, jsonEncode(mockData));
+
+    return RecommendationSnapshot.fromJson(harvestCase.id, mockData);
+  }
 }
